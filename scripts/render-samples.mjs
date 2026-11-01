@@ -77,6 +77,9 @@ const longText = Array.from({ length: 40 }, (_, i) => TEXT[i % TEXT.length]);
 const post = (id, title, author, date, content, photos = []) => ({ id, title, author, date, doc: content, photoIdx: photos });
 
 const CASES = {
+  many: Array.from({ length: 22 }, (_, i) =>
+    post(`m${i}`, `Yirmi İki Yazılık Sayının ${i + 1}. Haberi`, i % 2 ? 'Emir' : 'Ayşe', `2026-0${(i % 9) + 1}-15`, doc(TEXT.slice(0, (i % 3) + 1)), i % 3 === 0 ? [i % 8] : []),
+  ),
   single: [post('a', 'Yağmurlu Pazarın Ardından Sahilde Unutulmaz Bir Gün', 'Emir', '2026-10-18', doc(TEXT), [0])],
   rich: [post('a', 'Her Yıl Bugün, Aynı Masada', 'Emir', '2026-10-18', rich, [1])],
   two: [
@@ -145,32 +148,40 @@ for (const name of wanted) {
     const result = await page.evaluate(
       async ({ posts, seed, era, photoUrls }) => {
         const { renderNewspaper } = await import('/src/newspaper/index.ts');
-        const load = async (url) => {
+        const decode = async (url) => {
           const img = new Image();
           img.src = url;
           await img.decode();
           return img;
         };
-        const images = await Promise.all(photoUrls.map(load));
+        const images = await Promise.all(photoUrls.map(decode));
         const input = posts.map((p) => ({
           ...p,
-          photos: p.photoIdx.map((i) => ({
-            source: images[i % images.length],
-            w: images[i % images.length].naturalWidth,
-            h: images[i % images.length].naturalHeight,
-            caption: i % 3 === 0 ? 'Sahilde, gün batımına doğru yürürken.' : '',
-          })),
+          photos: p.photoIdx.map((i) => {
+            const image = images[i % images.length];
+            return {
+              load: async () => image,
+              w: image.naturalWidth,
+              h: image.naturalHeight,
+              caption: i % 3 === 0 ? 'Sahilde, gün batımına doğru yürürken.' : '',
+            };
+          }),
         }));
-        const out = await renderNewspaper({ name: 'The Newspaper of Us', posts: input, seed, volume: 1, issueNumber: 12, era });
-        const pages = out.pages.map((canvas) => {
-          const preview = document.createElement('canvas');
-          preview.width = 1100;
-          preview.height = Math.round((canvas.height / canvas.width) * 1100);
-          const ctx = preview.getContext('2d');
-          ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(canvas, 0, 0, preview.width, preview.height);
-          return { preview: preview.toDataURL('image/jpeg', 0.88), png: canvas.toDataURL('image/png') };
-        });
+        const pages = [];
+        const out = await renderNewspaper(
+          { name: 'The Newspaper of Us', posts: input, seed, volume: 1, issueNumber: 12, era },
+          {
+            onPage: (canvas) => {
+              const preview = document.createElement('canvas');
+              preview.width = 1100;
+              preview.height = Math.round((canvas.height / canvas.width) * 1100);
+              const ctx = preview.getContext('2d');
+              ctx.imageSmoothingQuality = 'high';
+              ctx.drawImage(canvas, 0, 0, preview.width, preview.height);
+              pages.push({ preview: preview.toDataURL('image/jpeg', 0.88), png: canvas.toDataURL('image/png') });
+            },
+          },
+        );
         return { styleName: out.styleName, pages };
       },
       { posts: CASES[name], seed, era: values.era, photoUrls },

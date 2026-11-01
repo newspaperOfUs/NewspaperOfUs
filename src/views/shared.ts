@@ -1,29 +1,39 @@
 import { PAPER_NAME } from '../config';
 import { h } from '../dom';
+import { icon, type IconName } from '../icons';
 import type { App } from '../main';
+import { themeButton } from '../theme';
 
-export function topBar(app: App, ...actions: (HTMLElement | null | false)[]): HTMLElement {
+export function iconLink(name: IconName, label: string, href: string, extraClass = ''): HTMLAnchorElement {
+  return h('a', { class: `btn ${extraClass}`, href }, icon(name), h('span', {}, label));
+}
+
+export function iconButton(name: IconName, label: string, onclick: () => void, extraClass = ''): HTMLButtonElement {
+  return h('button', { class: `btn ${extraClass}`, type: 'button', onclick }, icon(name), h('span', {}, label));
+}
+
+export function topBar(...actions: (HTMLElement | null | false)[]): HTMLElement {
   return h(
     'header',
     { class: 'topbar' },
     h('a', { class: 'brand', href: '#/' }, PAPER_NAME),
-    h('div', { class: 'actions' }, ...actions),
-    h(
-      'div',
-      { class: 'who' },
-      h('span', { class: 'muted' }, app.session.name),
-      h(
-        'button',
-        {
-          class: 'link',
-          onclick: () => {
-            if (confirm('Çıkış yapılsın mı? Token ve önbellek bu cihazdan silinir.')) app.logout();
-          },
-        },
-        'Çıkış',
-      ),
-    ),
+    h('div', { class: 'actions' }, ...actions, themeButton()),
   );
+}
+
+export function logoutButton(app: App): HTMLButtonElement {
+  const button = h('button', { class: 'icon-only', type: 'button', title: 'Çıkış' }, icon('logout'));
+  button.setAttribute('aria-label', 'Çıkış');
+  button.addEventListener('click', async () => {
+    const answer = await askDialog({
+      title: 'Çıkış yapılsın mı?',
+      body: 'Token ve önbellek bu cihazdan silinir. Tekrar girmek için token gerekir.',
+      keep: 'Kalayım',
+      proceed: 'Çıkış yap',
+    });
+    if (answer) app.logout();
+  });
+  return button;
 }
 
 /** Görünüm kapanınca serbest bırakılan fotoğraf URL'leri. */
@@ -42,8 +52,8 @@ export class UrlPool {
   }
 }
 
-export function loadInto(app: App, pool: UrlPool, image: HTMLImageElement, path: string) {
-  app.store
+export function loadInto(app: App, pool: UrlPool, image: HTMLImageElement, path: string): Promise<void> {
+  return app.store
     .imageBlob(path)
     .then((blob) => {
       image.src = pool.make(blob);
@@ -52,6 +62,113 @@ export function loadInto(app: App, pool: UrlPool, image: HTMLImageElement, path:
       image.alt = 'Fotoğraf yüklenemedi';
     });
 }
+
+const MAX_PARALLEL_THUMBS = 6;
+
+/**
+ * Küçük resimler ekrana yaklaşınca indirilir: 150 yazıda 150 istek atılmasın.
+ * Son görünen önce yüklenir; hızlı kaydırınca geride kalanlar sırayı tutmaz.
+ */
+export class LazyImages {
+  private paths = new WeakMap<Element, string>();
+  private queue: HTMLImageElement[] = [];
+  private active = 0;
+  private observer: IntersectionObserver;
+
+  constructor(
+    private app: App,
+    private pool: UrlPool,
+  ) {
+    this.observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          this.observer.unobserve(entry.target);
+          this.queue.push(entry.target as HTMLImageElement);
+        }
+        this.pump();
+      },
+      { rootMargin: '500px 0px' },
+    );
+  }
+
+  watch(image: HTMLImageElement, path: string) {
+    this.paths.set(image, path);
+    this.observer.observe(image);
+  }
+
+  private pump() {
+    while (this.active < MAX_PARALLEL_THUMBS && this.queue.length) {
+      const image = this.queue.pop()!;
+      this.active++;
+      void loadInto(this.app, this.pool, image, this.paths.get(image)!).finally(() => {
+        this.active--;
+        this.pump();
+      });
+    }
+  }
+
+  stop() {
+    this.observer.disconnect();
+    this.queue = [];
+  }
+}
+
+// --- Diyalog ---
+
+export interface DialogOptions {
+  title: string;
+  body: string;
+  keep: string;
+  proceed: string;
+  /** Sil düğmesi solda mı? Üç soruda yer değiştirir ki art arda tıklayarak geçilemesin. */
+  proceedFirst?: boolean;
+  /** Vazgeç büyür, devam küçülür: 0 normal, 2 en belirgin fark. */
+  pressure?: number;
+  danger?: boolean;
+}
+
+/** Evet derse true döner. Esc, arka plan veya vazgeç düğmesi hayır demektir. */
+export function askDialog(options: DialogOptions): Promise<boolean> {
+  return new Promise((resolve) => {
+    const dialog = h('dialog', { class: `dialog pressure-${options.pressure ?? 0}${options.danger ? ' danger' : ''}` });
+    const finish = (answer: boolean) => {
+      dialog.close();
+      dialog.remove();
+      resolve(answer);
+    };
+
+    const keep = h('button', { class: 'btn primary dialog-keep', type: 'button', onclick: () => finish(false) }, options.keep);
+    const proceed = h('button', { class: 'btn dialog-proceed', type: 'button', onclick: () => finish(true) }, options.proceed);
+    const buttons = options.proceedFirst ? [proceed, keep] : [keep, proceed];
+
+    dialog.append(
+      h('h2', { class: 'dialog-title' }, options.title),
+      h('p', { class: 'dialog-body' }, options.body),
+      h('div', { class: 'dialog-actions' }, ...buttons),
+    );
+    dialog.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      finish(false);
+    });
+    dialog.addEventListener('click', (event) => {
+      if (event.target === dialog) finish(false);
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+    // Enter'a yanlışlıkla basan silmesin.
+    keep.focus();
+  });
+}
+
+export function toast(message: string) {
+  document.querySelector('.toast')?.remove();
+  const element = h('div', { class: 'toast', role: 'status' }, message);
+  document.body.append(element);
+  setTimeout(() => element.remove(), 5000);
+}
+
+// --- Fotoğraf görüntüleyici ---
 
 export function lightbox(app: App, pool: UrlPool, paths: { path: string; caption: string }[], start: number) {
   let index = start;
@@ -62,7 +179,7 @@ export function lightbox(app: App, pool: UrlPool, paths: { path: string; caption
     const item = paths[index];
     caption.textContent = item.caption;
     image.removeAttribute('src');
-    loadInto(app, pool, image, item.path);
+    void loadInto(app, pool, image, item.path);
   };
   const close = () => {
     overlay.remove();

@@ -21,6 +21,7 @@ export interface Post {
   /** Editörün ProseMirror JSON dokümanı. */
   doc: unknown;
   images: PostImage[];
+  tags: string[];
 }
 
 export interface NewImage {
@@ -34,6 +35,8 @@ export interface NewImage {
 export class ConflictError extends Error {}
 
 const CONCURRENCY = 6;
+/** Fotoğraflar telefonun belleğini doldurmasın: en son kullanılanlar kalır, gerisi gerekirse yeniden okunur. */
+const MEMORY_BUDGET = 96 * 1024 * 1024;
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = new Array(items.length);
@@ -61,6 +64,8 @@ export class Store {
   /** path → blob sha; dosyaları okumak ve çakışma kontrolü için. */
   private files = new Map<string, string>();
   private memory = new Map<string, ArrayBuffer>();
+  private memoryUsed = 0;
+  private parsed = new Map<string, Post>();
 
   constructor(private session: Session) {
     this.github = new GitHubRepo(session.token, DATA_REPO.owner, DATA_REPO.repo);
@@ -68,26 +73,50 @@ export class Store {
 
   private async readFile(sha: string): Promise<ArrayBuffer> {
     const inMemory = this.memory.get(sha);
-    if (inMemory) return inMemory;
+    if (inMemory) {
+      // Map ekleme sırasını korur: en başta her zaman en uzun süredir kullanılmayan durur.
+      this.memory.delete(sha);
+      this.memory.set(sha, inMemory);
+      return inMemory;
+    }
     const cached = this.session.remember ? await cacheGet(sha) : null;
     if (cached) {
-      this.memory.set(sha, cached);
+      this.remember(sha, cached);
       return cached;
     }
     const data = await this.github.readBlob(sha);
-    this.memory.set(sha, data);
+    this.remember(sha, data);
     if (this.session.remember) await cachePut(sha, data);
     return data;
   }
 
-  async refresh(): Promise<void> {
+  private remember(sha: string, data: ArrayBuffer) {
+    this.memory.set(sha, data);
+    this.memoryUsed += data.byteLength;
+    for (const [oldest, buffer] of this.memory) {
+      if (this.memoryUsed <= MEMORY_BUDGET || oldest === sha) break;
+      this.memory.delete(oldest);
+      this.memoryUsed -= buffer.byteLength;
+    }
+  }
+
+  async refresh(onProgress?: (done: number, total: number) => void): Promise<void> {
     const head = await this.github.headSha();
     const entries = await this.github.listFiles(head);
     this.files = new Map(entries.map((e) => [e.path, e.sha]));
     const postEntries = entries.filter((e) => /^posts\/[^/]+\.json$/.test(e.path));
+    let done = 0;
     const posts = await mapLimit(postEntries, CONCURRENCY, async (e) => {
-      const text = new TextDecoder().decode(await this.readFile(e.sha));
-      return JSON.parse(text) as Post;
+      let post = this.parsed.get(e.sha);
+      if (!post) {
+        const text = new TextDecoder().decode(await this.readFile(e.sha));
+        const raw = JSON.parse(text) as Post;
+        // Etiketlerden önce yazılmış yazılarda bu alan yok.
+        post = { ...raw, tags: raw.tags ?? [] };
+        this.parsed.set(e.sha, post);
+      }
+      onProgress?.(++done, postEntries.length);
+      return post;
     });
     this.posts = posts.sort(
       (a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt),

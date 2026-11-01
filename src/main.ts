@@ -1,6 +1,7 @@
 import './style.css';
-import { DATA_REPO } from './config';
+import { DATA_REPO, PAPER_NAME } from './config';
 import { h } from './dom';
+import { emptyFilter, type PostFilter } from './filter';
 import { ApiError } from './github';
 import { endSession, loadSession, saveSession, type Session } from './session';
 import { Store } from './store';
@@ -15,6 +16,8 @@ export interface App {
   store: Store;
   /** Gazete için işaretlenen yazılar. */
   selection: Set<string>;
+  /** Ana sayfa ve gazete seçimindeki arama ve etiketler. */
+  filter: PostFilter;
   /** Düzenleme ekranı kaydedilmemiş değişiklik varsa çıkışı burada sorar. */
   leaveGuard: (() => boolean) | null;
   /** Görünüm değişince çağrılır: nesne URL'lerini ve editörü temizler. */
@@ -28,16 +31,19 @@ const root = document.getElementById('app')!;
 let app: App | null = null;
 let isPrivate = true;
 let currentHash = '';
+let onFeed = false;
+/** Bir yazıya girip dönünce uzun listenin başına atılmayalım. */
+let feedScroll = 0;
 
 function showLogin(message?: string) {
   root.replaceChildren(loginView({ onLogin: login, message }));
 }
 
-async function login(session: Session): Promise<void> {
+async function login(session: Session, onProgress?: (done: number, total: number) => void): Promise<void> {
   const store = new Store(session);
   const info = await store.github.connect();
   isPrivate = info.isPrivate;
-  await store.refresh();
+  await store.refresh(onProgress);
   saveSession(session);
   start(session, store);
 }
@@ -54,6 +60,7 @@ function start(session: Session, store: Store) {
     session,
     store,
     selection: new Set(),
+    filter: emptyFilter(),
     leaveGuard: null,
     cleanup: null,
     go: (hash) => {
@@ -80,6 +87,7 @@ function start(session: Session, store: Store) {
 function render() {
   if (!app) return;
   currentHash = location.hash;
+  if (onFeed) feedScroll = window.scrollY;
   app.cleanup?.();
   app.cleanup = null;
   app.leaveGuard = null;
@@ -111,7 +119,8 @@ function render() {
         `Dikkat: ${DATA_REPO.repo} reposu public! İçerik token olmadan da okunabilir. GitHub’dan repoyu private yap.`,
       );
   root.replaceChildren(...[warning, view].filter((n): n is HTMLElement => !!n));
-  window.scrollTo(0, 0);
+  onFeed = !['yeni', 'duzenle', 'yazi', 'gazete'].includes(route);
+  window.scrollTo(0, onFeed ? feedScroll : 0);
 }
 
 window.addEventListener('hashchange', () => {
@@ -129,9 +138,12 @@ async function boot() {
     showLogin();
     return;
   }
-  root.replaceChildren(h('div', { class: 'center muted' }, 'Yükleniyor…'));
+  const progress = h('p', { class: 'muted', role: 'status' }, 'Arşiv açılıyor…');
+  root.replaceChildren(h('div', { class: 'center' }, h('h1', { class: 'nameplate' }, PAPER_NAME), progress));
   try {
-    await login(session);
+    await login(session, (done, total) => {
+      progress.textContent = `Arşiv açılıyor… ${done}/${total}`;
+    });
   } catch (error) {
     if (error instanceof ApiError && (error.status === 401 || error.status === 404)) {
       endSession();

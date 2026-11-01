@@ -1,100 +1,216 @@
+import { PAPER_NAME } from '../config';
 import { formatDate, h } from '../dom';
+import { excerptOf, filterPosts, isFiltering, searchTerms } from '../filter';
+import { icon } from '../icons';
 import type { App } from '../main';
-import { blocksToPlainText, docToBlocks } from '../newspaper/doc';
+import { PRICES, SLOGANS } from '../newspaper/copy';
+import { estimateLabel, estimatePosts } from '../newspaper/estimate';
 import type { Post } from '../store';
-import { loadInto, topBar, UrlPool } from './shared';
+import { themeButton } from '../theme';
+import { clearFilterButton, filterBar, highlighted, tagChip } from './filters';
+import { iconLink, LazyImages, logoutButton, UrlPool } from './shared';
 
 const STALE_AFTER_MS = 30_000;
 let lastRefresh = Date.now();
 
-function excerpt(post: Post): string {
-  const text = blocksToPlainText(docToBlocks(post.doc));
-  return text.length > 220 ? `${text.slice(0, 220).trimEnd()}…` : text;
+const pick = <T>(items: readonly T[]): T => items[Math.floor(Math.random() * items.length)];
+
+function monthOf(post: Post): string {
+  const [y, m] = post.date.split('-').map(Number);
+  return new Intl.DateTimeFormat('tr-TR', { month: 'long', year: 'numeric' }).format(new Date(y, (m || 1) - 1, 1));
+}
+
+function frontPage(app: App): HTMLElement {
+  const today = new Intl.DateTimeFormat('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date());
+  return h(
+    'header',
+    { class: 'front' },
+    h(
+      'div',
+      { class: 'front-strip' },
+      h('span', {}, today),
+      h('span', { class: 'front-price' }, pick(PRICES)),
+      h('span', { class: 'front-tools' }, h('span', { class: 'front-who' }, app.session.name), themeButton(), logoutButton(app)),
+    ),
+    h('h1', { class: 'nameplate' }, PAPER_NAME),
+    h('p', { class: 'front-sub' }, pick(SLOGANS)),
+  );
 }
 
 export function feedView(app: App): HTMLElement {
   const pool = new UrlPool();
-  app.cleanup = () => pool.release();
-
-  const generateButton = h('button', { class: 'btn primary', onclick: () => app.go('#/gazete') });
-  const refreshButton = h('button', { class: 'btn', textContent: 'Yenile' });
-  const list = h('div', { class: 'feed' });
-  const status = h('p', { class: 'muted status', role: 'status' });
-
-  const syncGenerate = () => {
-    const count = app.selection.size;
-    generateButton.textContent = count ? `Gazete üret (${count} yazı)` : 'Gazete üret';
-    generateButton.disabled = count === 0;
-    generateButton.title = count ? '' : 'Önce aşağıdan en az bir yazı işaretle';
+  const thumbs = new LazyImages(app, pool);
+  app.cleanup = () => {
+    thumbs.stop();
+    pool.release();
   };
 
-  const card = (post: Post) => {
-    const checkbox = h('input', {
-      type: 'checkbox',
-      checked: app.selection.has(post.id),
-      title: 'Gazeteye ekle',
-    });
+  const list = h('div', { class: 'feed' });
+  const status = h('p', { class: 'muted status', role: 'status' });
+  const count = h('span', { class: 'result-count' });
+  const selectAll = h('button', { class: 'link', type: 'button' });
+  const refreshButton = h('button', { class: 'link', type: 'button', textContent: 'Yenile' });
+
+  const generateButton = h('button', { class: 'btn primary dock-main', type: 'button', onclick: () => app.go('#/gazete') });
+  const clearSelection = h('button', { class: 'icon-only', type: 'button', title: 'Seçimi temizle' }, icon('close'));
+  clearSelection.setAttribute('aria-label', 'Seçimi temizle');
+
+  // Kartlar bir kez kurulur: aramada her tuşta küçük resimler yeniden yüklenmesin.
+  const cards = new Map<string, { element: HTMLElement; checkbox: HTMLInputElement; title: HTMLElement; excerpt: HTMLElement; post: Post }>();
+  let visible: Post[] = [];
+
+  const selectedPosts = () => app.store.posts.filter((p) => app.selection.has(p.id));
+
+  const syncDock = () => {
+    const selected = selectedPosts();
+    const label = selected.length
+      ? [`${selected.length} yazı`, estimateLabel(estimatePosts(selected))].join(' · ')
+      : '';
+    generateButton.replaceChildren(
+      icon('paper'),
+      h('span', {}, 'Gazete üret'),
+      label ? h('small', {}, label) : '',
+    );
+    clearSelection.hidden = selected.length === 0;
+    for (const { element, checkbox, post } of cards.values()) {
+      const on = app.selection.has(post.id);
+      checkbox.checked = on;
+      element.classList.toggle('selected', on);
+    }
+    const allOn = visible.length > 0 && visible.every((p) => app.selection.has(p.id));
+    selectAll.textContent = allOn ? 'Seçimi kaldır' : 'Hepsini seç';
+    selectAll.hidden = visible.length === 0;
+  };
+
+  const buildCard = (post: Post) => {
+    const checkbox = h('input', { type: 'checkbox', class: 'check', title: 'Gazeteye ekle' });
     checkbox.setAttribute('aria-label', `“${post.title}” yazısını gazeteye ekle`);
     checkbox.addEventListener('change', () => {
       if (checkbox.checked) app.selection.add(post.id);
       else app.selection.delete(post.id);
-      syncGenerate();
+      syncDock();
     });
 
     let thumb: HTMLElement | null = null;
     if (post.images.length) {
-      const image = h('img', { alt: '', loading: 'lazy' });
-      loadInto(app, pool, image, post.images[0].thumb);
+      const image = h('img', { alt: '' });
+      thumbs.watch(image, post.images[0].thumb);
       thumb = h(
-        'a',
-        { class: 'card-thumb', href: `#/yazi/${post.id}` },
+        'div',
+        { class: 'card-thumb' },
         image,
-        post.images.length > 1 ? h('span', { class: 'count' }, `${post.images.length} foto`) : null,
+        post.images.length > 1 ? h('span', { class: 'count' }, String(post.images.length)) : null,
       );
     }
 
-    return h(
+    const title = h('a', { class: 'card-title', href: `#/yazi/${post.id}` }, post.title);
+    const excerpt = h('p', { class: 'excerpt' });
+    const element = h(
       'article',
       { class: 'card' },
       h('label', { class: 'card-check' }, checkbox),
       h(
         'div',
         { class: 'card-body' },
-        h('a', { class: 'card-title', href: `#/yazi/${post.id}` }, post.title),
-        h('p', { class: 'muted meta' }, `${post.author} · ${formatDate(post.date)}`),
-        h('p', { class: 'excerpt' }, excerpt(post)),
+        title,
+        h('p', { class: 'meta' }, `${post.author} · ${formatDate(post.date)}`),
+        excerpt,
+        post.tags.length ? h('div', { class: 'card-tags' }, post.tags.map(tagChip)) : null,
       ),
       thumb,
     );
+    cards.set(post.id, { element, checkbox, title, excerpt, post });
   };
+
+  const paintList = () => {
+    visible = filterPosts(app.store.posts, app.filter);
+    const terms = searchTerms(app.filter.query);
+    const filtering = isFiltering(app.filter);
+
+    count.textContent = filtering ? `${visible.length} / ${app.store.posts.length} yazı` : `${visible.length} yazı`;
+    clearFilter.hidden = !filtering;
+
+    if (!visible.length) {
+      list.replaceChildren(
+        app.store.posts.length
+          ? h('div', { class: 'empty' }, h('p', {}, 'Bu aramayla eşleşen yazı yok.'))
+          : h(
+              'div',
+              { class: 'empty' },
+              h('p', {}, 'Gazetenin ilk sayısı seni bekliyor.'),
+              h('a', { class: 'btn primary', href: '#/yeni' }, 'İlk yazıyı yaz'),
+            ),
+      );
+      syncDock();
+      return;
+    }
+
+    // 150 yazı tek uzun listede kaybolmasın: aylara ayrılır.
+    const months: { name: string; cards: HTMLElement[] }[] = [];
+    for (const post of visible) {
+      const card = cards.get(post.id)!;
+      card.title.replaceChildren(...highlighted(post.title, terms));
+      card.excerpt.replaceChildren(...highlighted(excerptOf(post, terms), terms));
+      const name = monthOf(post);
+      const last = months.at(-1);
+      if (last?.name === name) last.cards.push(card.element);
+      else months.push({ name, cards: [card.element] });
+    }
+    list.replaceChildren(
+      ...months.map((month) =>
+        h(
+          'section',
+          { class: 'month' },
+          h('h2', { class: 'month-title' }, month.name, h('span', { class: 'month-count' }, String(month.cards.length))),
+          h('div', { class: 'cards' }, month.cards),
+        ),
+      ),
+    );
+    syncDock();
+  };
+
+  // Listenin ortasındayken filtre değişirse sonuçların başına dön.
+  const onFilter = () => {
+    paintList();
+    const top = list.getBoundingClientRect().top + window.scrollY - filters.element.offsetHeight - 8;
+    if (window.scrollY > top) window.scrollTo(0, top);
+  };
+  const filters = filterBar(app, onFilter);
+  const clearFilter = clearFilterButton(app, onFilter, filters.reset);
 
   const paint = () => {
     const known = new Set(app.store.posts.map((p) => p.id));
     for (const id of [...app.selection]) if (!known.has(id)) app.selection.delete(id);
-    syncGenerate();
     pool.release();
-    if (app.store.posts.length) {
-      list.replaceChildren(...app.store.posts.map(card));
-    } else {
-      list.replaceChildren(
-        h(
-          'div',
-          { class: 'empty' },
-          h('p', {}, 'Gazetenin ilk sayısı seni bekliyor.'),
-          h('a', { class: 'btn primary', href: '#/yeni' }, 'İlk yazıyı yaz'),
-        ),
-      );
-    }
+    cards.clear();
+    app.store.posts.forEach(buildCard);
+    filters.repaint();
+    paintList();
   };
+
+  selectAll.addEventListener('click', () => {
+    const allOn = visible.every((p) => app.selection.has(p.id));
+    for (const post of visible) {
+      if (allOn) app.selection.delete(post.id);
+      else app.selection.add(post.id);
+    }
+    syncDock();
+  });
+  clearSelection.addEventListener('click', () => {
+    app.selection.clear();
+    syncDock();
+  });
 
   const refresh = async () => {
     refreshButton.disabled = true;
     status.textContent = 'Güncelleniyor…';
     try {
-      const before = JSON.stringify(app.store.posts.map((p) => [p.id, p.updatedAt]));
+      const before = app.store.posts;
       await app.store.refresh();
       lastRefresh = Date.now();
-      if (before !== JSON.stringify(app.store.posts.map((p) => [p.id, p.updatedAt]))) paint();
+      const after = app.store.posts;
+      // Yazı nesneleri yalnızca içerik değişince yenilenir.
+      if (before.length !== after.length || before.some((post, i) => post !== after[i])) paint();
       status.textContent = '';
     } catch (error) {
       status.textContent = app.handleError(error);
@@ -102,16 +218,28 @@ export function feedView(app: App): HTMLElement {
       refreshButton.disabled = false;
     }
   };
-
   refreshButton.addEventListener('click', () => void refresh());
+
   paint();
   // Diğer kişinin yeni yazısı kendiliğinden gelsin.
   if (Date.now() - lastRefresh > STALE_AFTER_MS) void refresh();
 
   return h(
     'div',
-    { class: 'page' },
-    topBar(app, h('a', { class: 'btn', href: '#/yeni' }, 'Yeni yazı'), generateButton, refreshButton),
-    h('main', { class: 'content' }, status, list),
+    { class: 'page page-home' },
+    frontPage(app),
+    filters.element,
+    h(
+      'main',
+      { class: 'content' },
+      h('div', { class: 'result-line' }, count, clearFilter, h('span', { class: 'spacer' }), selectAll, refreshButton),
+      status,
+      list,
+    ),
+    h(
+      'div',
+      { class: 'dock' },
+      h('div', { class: 'dock-inner' }, iconLink('plus', 'Yeni yazı', '#/yeni', 'dock-new'), generateButton, clearSelection),
+    ),
   );
 }

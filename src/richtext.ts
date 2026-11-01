@@ -2,7 +2,27 @@ import { Editor, generateHTML, type Extensions } from '@tiptap/core';
 import TextAlign from '@tiptap/extension-text-align';
 import { Color, TextStyle } from '@tiptap/extension-text-style';
 import StarterKit from '@tiptap/starter-kit';
+import { liftForDark } from './color';
 import { h } from './dom';
+
+/** Her renkli metin karanlık mod karşılığını da taşır; kayıtlı doküman değişmez. */
+const ThemedColor = Color.extend({
+  addGlobalAttributes() {
+    return (this.parent?.() ?? []).map((entry) => ({
+      ...entry,
+      attributes: {
+        ...entry.attributes,
+        color: {
+          ...entry.attributes.color,
+          renderHTML: (attributes: Record<string, unknown>) =>
+            attributes.color
+              ? { style: `color: ${attributes.color}; --dark: ${liftForDark(String(attributes.color))}` }
+              : {},
+        },
+      },
+    }));
+  },
+});
 
 const extensions: Extensions = [
   StarterKit.configure({
@@ -12,7 +32,7 @@ const extensions: Extensions = [
     link: false,
   }),
   TextStyle,
-  Color,
+  ThemedColor,
   TextAlign.configure({ types: ['heading', 'paragraph'] }),
 ];
 
@@ -83,9 +103,39 @@ export function createRichEditor(initial: unknown, onChange: () => void): RichEd
     editorProps: { attributes: { 'aria-label': 'Yazı içeriği', spellcheck: 'true' } },
   });
 
+  const appendColors = () => {
+    for (const [color, name] of SWATCHES) {
+      const swatch = h('button', { type: 'button', class: 'swatch', title: `Yazı rengi: ${name}` });
+      swatch.style.setProperty('--swatch', color);
+      swatch.style.setProperty('--swatch-dark', liftForDark(color));
+      swatch.setAttribute('aria-label', `Yazı rengi: ${name}`);
+      swatch.addEventListener('mousedown', (e) => e.preventDefault());
+      swatch.addEventListener('click', () => editor.chain().focus().setColor(color).run());
+      toolbar.append(swatch);
+    }
+
+    const picker = h('input', { type: 'color', class: 'color-picker', title: 'Başka bir renk seç', value: '#a3201a' });
+    picker.setAttribute('aria-label', 'Başka bir renk seç');
+    picker.addEventListener('input', () => editor.chain().setColor(picker.value).run());
+    picker.addEventListener('change', () => editor.commands.focus());
+    toolbar.append(picker);
+
+    const clearColor = h('button', { type: 'button', class: 'tool', title: 'Rengi kaldır', textContent: 'A̸' });
+    clearColor.setAttribute('aria-label', 'Rengi kaldır');
+    clearColor.addEventListener('mousedown', (e) => e.preventDefault());
+    clearColor.addEventListener('click', () => editor.chain().focus().unsetColor().run());
+    toolbar.append(clearColor);
+  };
+
+  let separators = 0;
   for (const tool of TOOLS) {
     if (tool === '|') {
       toolbar.append(h('span', { class: 'tool-sep' }));
+      // Renkler ilk gruptan hemen sonra: telefonda yana kaydırmadan görünsün.
+      if (++separators === 1) {
+        appendColors();
+        toolbar.append(h('span', { class: 'tool-sep' }));
+      }
       continue;
     }
     const button = h('button', {
@@ -101,28 +151,6 @@ export function createRichEditor(initial: unknown, onChange: () => void): RichEd
     toolbar.append(button);
     buttons.push({ el: button, def: tool });
   }
-
-  toolbar.append(h('span', { class: 'tool-sep' }));
-  for (const [color, name] of SWATCHES) {
-    const swatch = h('button', { type: 'button', class: 'swatch', title: `Yazı rengi: ${name}` });
-    swatch.style.background = color;
-    swatch.setAttribute('aria-label', `Yazı rengi: ${name}`);
-    swatch.addEventListener('mousedown', (e) => e.preventDefault());
-    swatch.addEventListener('click', () => editor.chain().focus().setColor(color).run());
-    toolbar.append(swatch);
-  }
-
-  const picker = h('input', { type: 'color', class: 'color-picker', title: 'Başka bir renk seç', value: '#a3201a' });
-  picker.setAttribute('aria-label', 'Başka bir renk seç');
-  picker.addEventListener('input', () => editor.chain().setColor(picker.value).run());
-  picker.addEventListener('change', () => editor.commands.focus());
-  toolbar.append(picker);
-
-  const clearColor = h('button', { type: 'button', class: 'tool', title: 'Rengi kaldır', textContent: 'A̸' });
-  clearColor.setAttribute('aria-label', 'Rengi kaldır');
-  clearColor.addEventListener('mousedown', (e) => e.preventDefault());
-  clearColor.addEventListener('click', () => editor.chain().focus().unsetColor().run());
-  toolbar.append(clearColor);
 
   function syncToolbar() {
     for (const { el, def } of buttons) el.classList.toggle('on', def.active?.(editor) ?? false);

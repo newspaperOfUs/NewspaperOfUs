@@ -53,11 +53,16 @@ Token'ın süresi dolunca site giriş ekranına döner; yenisini üretip iki cih
 
 ## Kullanım
 
-1. **Yeni yazı:** Başlık, tarih, içerik (kalın, italik, renk, ara başlık, alıntı, liste) ve galeri.
-2. **Ana sayfa:** İkinizin bütün yazıları. Gazeteye girecekleri işaretleyip **Gazete üret** de.
-3. **Üretim ekranı:** Beğenmezsen **Yeniden üret**. Üstteki küçük resimlerden önceki tasarımlara dönebilirsin; aynı tasarım birebir geri gelir. Beğendiğini **PNG indir** veya **Yazdır**.
+1. **Yeni yazı:** Başlık, tarih, etiketler, içerik (kalın, italik, renk, ara başlık, alıntı, liste) ve galeri. Yazarken altta tahmini sayfa sayısı görünür.
+2. **Ana sayfa:** İkinizin bütün yazıları, aylara ayrılmış. Üstten başlıkta ve içerikte arayabilir, etiketlere dokunarak süzebilirsin. Gazeteye girecekleri işaretleyip **Gazete üret** de; düğme tahmini sayfa sayısını gösterir.
+3. **Üretim ekranı:** Beğenmezsen **Yeniden üret**. Üstteki küçük resimlerden önceki tasarımlara dönebilirsin; aynı tasarım birebir geri gelir. Beğendiğini **PNG indir** veya **Yazdır**. Birden çok sayfa çıkarsa hepsi tek **ZIP** olarak iner; her sayfa ayrıca tek başına da indirilebilir.
+4. **Silme:** Yazı üç kez sorularak silinir. Git geçmişinde kaldığı için gerekirse veri reposundan geri alınabilir.
 
-Çıktı A4 oranında ve 300 DPI'dır (2480×3508). İçerik bir sayfaya sığmazsa gazete kendiliğinden "Devamı 2. sayfada" ile sürer.
+Çıktı A4 oranında ve 300 DPI'dır (2480×3508). Seçim sınırı yoktur: içerik ne kadar uzunsa o kadar sayfa basılır, sığmayan yazı "Devamı 2. sayfada" ile sürer.
+
+**Arama:** Başlık, içerik, fotoğraf altyazısı ve etiketlerde arar. Türkçe karakter ve büyük/küçük harf fark etmez ("gunes" "Güneş"i bulur). Birden çok kelime yazarsan hepsi geçen yazılar gelir.
+
+**Etiketler:** Yeni etiket yazıyı düzenlerken oluşturulur, sonra listeden tek dokunuşla verilir. Etiket listesi yazılardan çıkar: hiçbir yazıda kalmayan etiket kendiliğinden kaybolur. Birden çok etiket seçilirse herhangi birini taşıyan yazılar gösterilir.
 
 Yazıların kendisi dışındaki espriler (ilanlar, sloganlar, fiyat, hava durumu) `src/newspaper/copy.ts` içindedir; istediğin gibi değiştir veya yenisini ekle.
 
@@ -72,4 +77,7 @@ npm run test:e2e     # sahte GitHub API ile uçtan uca testler
 
 # GitHub olmadan örnek gazete üretir
 node scripts/render-samples.mjs --photos <foto-klasörü> --out <çıktı-klasörü>
+
+# Sayfa tahminini gerçek dizgiyle karşılaştırır (yerleşim kodu değişince çalıştır)
+npm run calibrate
 ```

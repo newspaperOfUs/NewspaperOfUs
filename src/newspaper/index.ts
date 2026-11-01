@@ -29,10 +29,19 @@ export interface NewspaperInput {
 }
 
 export interface NewspaperResult {
-  pages: HTMLCanvasElement[];
+  pageCount: number;
   styleName: string;
   seed: number;
 }
+
+export interface NewspaperHooks {
+  /** Sayfa basılınca çağrılır; dönüşünden sonra canvas boşaltılır, saklamak için kopyalanmalı. */
+  onPage: (canvas: HTMLCanvasElement, index: number, total: number) => void | Promise<void>;
+  onProgress?: (progress: { stage: 'layout' | 'print'; page: number; total: number | null }) => void;
+  signal?: AbortSignal;
+}
+
+export class CancelledError extends Error {}
 
 function parseDate(iso: string): Date {
   const [y, m, d] = iso.split('-').map(Number);
@@ -84,7 +93,14 @@ function orderStories(posts: NewspaperPost[], rng: Rng): Story[] {
   return [lead.story, ...rng.shuffle(stories).map((s) => s.story)];
 }
 
-function printPage(ops: DrawOp[], style: Style, rng: Rng): HTMLCanvasElement {
+/** Uzun işlerde arayüz donmasın; sekme arka plandayken de ilerleyebilsin diye rAF kullanılmaz. */
+const breathe = () => new Promise((resolve) => setTimeout(resolve));
+
+async function printPage(ops: DrawOp[], style: Style, rng: Rng): Promise<HTMLCanvasElement> {
+  // Bellekte aynı anda yalnızca bu sayfanın fotoğrafları bulunur.
+  const photos = [...new Set(ops.flatMap((op) => op.photo ?? []))];
+  for (const photo of photos) photo.source = await photo.load();
+
   const paper = makePaper(PAGE_W, PAGE_H, style, rng.fork());
   const ink = createCanvas(PAGE_W, PAGE_H);
   const ctx = ink.getContext('2d')!;
@@ -92,6 +108,11 @@ function printPage(ops: DrawOp[], style: Style, rng: Rng): HTMLCanvasElement {
   ctx.fontKerning = 'normal';
   if ('textRendering' in ctx) ctx.textRendering = 'geometricPrecision';
   for (const op of ops) op(ctx);
+
+  for (const photo of photos) {
+    if (photo.source && 'close' in photo.source) photo.source.close();
+    photo.source = undefined;
+  }
 
   distressInk(ink, style, rng.fork());
   showThrough(paper, ink, style);
@@ -106,7 +127,13 @@ function printPage(ops: DrawOp[], style: Style, rng: Rng): HTMLCanvasElement {
   return paper;
 }
 
-export async function renderNewspaper(input: NewspaperInput): Promise<NewspaperResult> {
+interface IssueLayout {
+  style: Style;
+  pages: DrawOp[][];
+  printRng: Rng;
+}
+
+async function layoutIssue(input: NewspaperInput, hooks?: Pick<NewspaperHooks, 'onProgress' | 'signal'>): Promise<IssueLayout> {
   const rng = new Rng(input.seed);
   const style = resolveStyle(rng.fork(), input.era);
   await loadStyleFonts(style);
@@ -135,14 +162,15 @@ export async function renderNewspaper(input: NewspaperInput): Promise<NewspaperR
     dateLong: formatLong(issueDate),
   };
 
-  const queue = orderStories(input.posts, rng.fork());
-  const pageOps: DrawOp[][] = [];
-  let remaining = queue;
-  const maxPages = 40;
+  const pages: DrawOp[][] = [];
+  let remaining = orderStories(input.posts, rng.fork());
 
   while (remaining.length) {
-    if (pageOps.length >= maxPages) throw new Error('Seçilen içerik çok uzun: en fazla 40 sayfa üretilebilir.');
-    const pageNumber = pageOps.length + 1;
+    if (hooks?.signal?.aborted) throw new CancelledError();
+    const pageNumber = pages.length + 1;
+    hooks?.onProgress?.({ stage: 'layout', page: pageNumber, total: null });
+    await breathe();
+
     const ops: DrawOp[] = [];
     let top: number;
 
@@ -159,11 +187,33 @@ export async function renderNewspaper(input: NewspaperInput): Promise<NewspaperR
     const rect: Rect = { x: margin, y: top, w: contentW, h: PAGE_H - margin - top };
     const { layout, rest } = layoutPage(env, remaining, rect, pageNumber);
     ops.push(...layout.ops);
-    pageOps.push(ops);
+    pages.push(ops);
     remaining = rest;
   }
 
-  const printRng = rng.fork();
-  const pages = pageOps.map((ops) => printPage(ops, style, printRng.fork()));
-  return { pages, styleName: style.name, seed: input.seed };
+  return { style, pages, printRng: rng.fork() };
+}
+
+/** Sayfaları sırayla basar: uzun bir sayıda bile bellekte aynı anda tek sayfa durur. */
+export async function renderNewspaper(input: NewspaperInput, hooks: NewspaperHooks): Promise<NewspaperResult> {
+  const { style, pages, printRng } = await layoutIssue(input, hooks);
+
+  for (const [index, ops] of pages.entries()) {
+    if (hooks.signal?.aborted) throw new CancelledError();
+    hooks.onProgress?.({ stage: 'print', page: index + 1, total: pages.length });
+    await breathe();
+    const canvas = await printPage(ops, style, printRng.fork());
+    try {
+      await hooks.onPage(canvas, index, pages.length);
+    } finally {
+      canvas.width = 0;
+    }
+  }
+  return { pageCount: pages.length, styleName: style.name, seed: input.seed };
+}
+
+/** Basmadan yalnızca dizgi: sayfa tahmininin kalibrasyonu için. */
+export async function countPages(input: NewspaperInput): Promise<{ pageCount: number; styleName: string }> {
+  const { style, pages } = await layoutIssue(input);
+  return { pageCount: pages.length, styleName: style.name };
 }

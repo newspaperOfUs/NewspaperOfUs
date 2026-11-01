@@ -15,9 +15,11 @@ export interface PhotoFx {
 }
 
 export interface SourcePhoto {
-  source: CanvasImageSource;
   w: number;
   h: number;
+  /** Fotoğraf yalnızca basılacağı sayfa hazırlanırken belleğe alınır. */
+  load: () => Promise<CanvasImageSource>;
+  source?: CanvasImageSource;
 }
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -34,10 +36,12 @@ export function createCanvas(w: number, h: number): HTMLCanvasElement {
 
 /** Yüzler genelde üst-ortada olduğu için kırpma merkezi hafif yukarıda. */
 function coverCrop(photo: SourcePhoto, w: number, h: number) {
-  const scale = Math.max(w / photo.w, h / photo.h);
+  // Kayıtlı ölçü yanlışsa görselin dışından okunup siyah bant çıkmasın: gerçek ölçü esas alınır.
+  const { width, height } = photo.source as ImageBitmap;
+  const scale = Math.max(w / width, h / height);
   const sw = w / scale;
   const sh = h / scale;
-  return { sx: (photo.w - sw) / 2, sy: (photo.h - sh) * 0.42, sw, sh };
+  return { sx: (width - sw) / 2, sy: (height - sh) * 0.42, sw, sh };
 }
 
 /**
@@ -51,7 +55,7 @@ export function renderPhoto(photo: SourcePhoto, w: number, h: number, fx: PhotoF
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   const crop = coverCrop(photo, width, height);
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(photo.source, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, width, height);
+  ctx.drawImage(photo.source!, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, width, height);
 
   const image = ctx.getImageData(0, 0, width, height);
   const data = image.data;

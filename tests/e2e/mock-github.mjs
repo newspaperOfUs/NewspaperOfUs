@@ -17,6 +17,8 @@ const state = {
   commitCount: 0,
   /** Testler "tam bu anda başkası commit attı" durumunu buradan tetikler. */
   raceNextRef: false,
+  /** Tembel yüklemeyi sınamak için: kaç dosya okundu. */
+  blobReads: 0,
 };
 
 const sha = (kind, data) => createHash('sha1').update(kind).update(data).digest('hex');
@@ -100,6 +102,14 @@ createServer(async (req, res) => {
   if (path.startsWith('/__test/')) {
     const action = path.slice(8);
     if (action === 'state') return send(res, 200, snapshot());
+    if (action === 'reads') return send(res, 200, { reads: state.blobReads });
+    if (action === 'seed') {
+      const { files } = await readBody(req);
+      const entries = new Map(state.branchHead ? treeOf(state.branchHead) : []);
+      for (const [file, base64] of Object.entries(files)) entries.set(file, storeBlob(Buffer.from(base64, 'base64')));
+      state.branchHead = storeCommit(storeTree(entries), state.branchHead ? [state.branchHead] : [], 'Toplu veri');
+      return send(res, 200, { ok: true });
+    }
     if (action === 'race') state.raceNextRef = true;
     if (action === 'foreign') foreignCommit();
     if (action === 'revoke') state.token = 'revoked';
@@ -111,6 +121,7 @@ createServer(async (req, res) => {
       state.commits.clear();
       state.token = 'good-token';
       state.raceNextRef = false;
+      state.blobReads = 0;
     }
     return send(res, 200, { ok: true });
   }
@@ -153,6 +164,7 @@ createServer(async (req, res) => {
   if (req.method === 'GET' && match) {
     const blob = state.blobs.get(match[1]);
     if (!blob) return send(res, 404, { message: 'Not Found' });
+    state.blobReads++;
     if (req.headers.accept !== 'application/vnd.github.raw+json') {
       return send(res, 200, { content: blob.toString('base64'), encoding: 'base64' });
     }

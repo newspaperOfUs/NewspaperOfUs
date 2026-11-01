@@ -20,7 +20,10 @@ import {
 export const PAGE_W = 2480;
 export const PAGE_H = 3508;
 
-export type DrawOp = (ctx: CanvasRenderingContext2D) => void;
+export type DrawOp = ((ctx: CanvasRenderingContext2D) => void) & {
+  /** Bu çizim için belleğe alınması gereken fotoğraf. */
+  photo?: NewsPhoto;
+};
 
 export interface NewsPhoto extends SourcePhoto {
   caption: string;
@@ -649,8 +652,8 @@ function buildLeaf(env: Env, plan: LeafPlan, W: number, f: number, availH: numbe
         );
       }
       if (rest.length) {
-        const loneVertical = rest.length === 1 && rest[0].h > rest[0].w && tc >= 2;
-        if (loneVertical) {
+        // Tek kalan fotoğraf sayfa genişliğinde şerit olursa yazıyı başka sayfaya iter.
+        if (rest.length === 1 && tc >= 2) {
           const span = clamp(Math.round(tc * 0.5), 1, tc - 1);
           const stripW = span * colW + (span - 1) * gutter;
           const colStart = plan.colStart === 'left' ? tc - span : 0;
@@ -698,7 +701,7 @@ interface LeafDraw {
 function drawPhotoOp(env: Env, photo: NewsPhoto, x: number, y: number, w: number, h: number): DrawOp {
   const { style } = env;
   const rng = env.rng.fork();
-  return (ctx) => {
+  const op: DrawOp = (ctx) => {
     const rendered = renderPhoto(photo, w, h, style.fx, style.ink, rng);
     ctx.drawImage(rendered, Math.round(x), Math.round(y));
     if (style.fx.kind !== 'faded' || style.columnRule !== 'none') {
@@ -708,6 +711,8 @@ function drawPhotoOp(env: Env, photo: NewsPhoto, x: number, y: number, w: number
     }
     rendered.width = 0;
   };
+  op.photo = photo;
+  return op;
 }
 
 function groupOps(env: Env, group: Group, x: number, y: number, phi: number, ops: DrawOp[]): number {

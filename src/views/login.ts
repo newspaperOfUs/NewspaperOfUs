@@ -2,6 +2,7 @@ import { DATA_REPO, PAPER_NAME } from '../config';
 import { h } from '../dom';
 import { ApiError } from '../github';
 import type { Session } from '../session';
+import { themeButton } from '../theme';
 
 interface LoginProps {
   onLogin: (session: Session) => Promise<void>;
@@ -25,9 +26,9 @@ export function loginView({ onLogin, message }: LoginProps): HTMLElement {
     maxLength: 40,
     placeholder: 'Yazılarında görünecek isim',
   });
-  const remember = h('input', { type: 'checkbox', id: 'remember', checked: true });
+  const remember = h('input', { type: 'checkbox', class: 'check', id: 'remember', checked: true });
   const error = h('p', { class: 'error', role: 'alert', textContent: message ?? '' });
-  const submit = h('button', { type: 'submit', class: 'btn primary', textContent: 'Gir' });
+  const submit = h('button', { type: 'submit', class: 'btn primary big', textContent: 'Gir' });
 
   const form = h(
     'form',
@@ -36,7 +37,7 @@ export function loginView({ onLogin, message }: LoginProps): HTMLElement {
     token,
     h('label', { htmlFor: 'name' }, 'Adın'),
     name,
-    h('label', { class: 'check' }, remember, ' Bu cihazı hatırla'),
+    h('label', { class: 'check-row' }, remember, ' Bu cihazı hatırla'),
     error,
     submit,
   );
@@ -66,8 +67,9 @@ export function loginView({ onLogin, message }: LoginProps): HTMLElement {
   return h(
     'main',
     { class: 'login' },
-    h('h1', { class: 'masthead' }, PAPER_NAME),
-    h('p', { class: 'muted' }, 'Yalnızca iki okuru olan gazete.'),
+    h('div', { class: 'login-theme' }, themeButton()),
+    h('h1', { class: 'nameplate' }, PAPER_NAME),
+    h('p', { class: 'login-sub' }, 'Yalnızca iki okuru olan gazete.'),
     form,
     h('p', { class: 'hint' }, `Anahtar, ${DATA_REPO.repo} reposuna erişim veren GitHub token’ıdır.`),
   );

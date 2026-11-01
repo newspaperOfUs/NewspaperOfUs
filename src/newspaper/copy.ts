@@ -4,19 +4,19 @@
  */
 
 export const SLOGANS = [
-  'Tirajı iki, okuru biz.',
   'Yalnızca ikimizin haberi var.',
   'İki kişilik dünyanın tek gazetesi.',
   'Her sayısı biraz daha biz.',
-  'Kurulduğu günden beri tarafsız değildir.',
-  'Aşk haberciliğinde bir numara. Tek numara.',
+  'Kurulduğu günden beri taraflıdır. Sevenlerin tarafındayız.',
   'Dünyanın en küçük, en önemli gazetesi.',
+  "Toprak yağmura, Emir Esfer'e yeniden...",
+  "Toprak yağmura, Esfer Emir'e yeniden..."
 ];
 
 export const PRICES = [
   'Fiyatı: Bir öpücük',
   'Fiyatı: İki sarılma',
-  'Fiyatı: Bir kahve ısmarlamak',
+  'Fiyatı: Üç iltifat',
   'Fiyatı: Bir gülümseme',
 ];
 
@@ -24,14 +24,11 @@ export const WEATHER = [
   'Kalpte parçalı güneşli, akşama doğru yer yer sarılma bekleniyor.',
   'Evin içi sıcak, dışarısı önemsiz.',
   'Hafif kahve kokulu rüzgâr. Görüş mesafesi: sen.',
-  'Battaniye altında 24 derece. Kalkmak tavsiye edilmez.',
 ];
 
 export const SIDE_NOTES = [
   'Abonelik ömür boyudur, iptal edilemez.',
   'Bu gazete iki kişiliktir. Tiraj artırılmayacaktır.',
-  'Okur mektupları mutfakta sözlü olarak kabul edilir.',
-  'Yazı işleri her gün kanepede toplanır.',
 ];
 
 export const KICKERS = ['ÖZEL HABER', 'BİZE ÖZEL', 'FLAŞ', 'ARŞİVDEN', 'BUGÜNÜN ANISI', 'BAŞYAZI', 'GÜNÜN HABERİ'];
@@ -48,14 +45,14 @@ export const CAPTIONS = [
 
 /** Boş alanı dolduran büyük panelin alt metinleri. */
 export const PANEL_QUOTES = [
-  'Bu gazete yalnızca iki kişi için basılmıştır. Üçüncü bir okur tespit edilirse kahve ısmarlamakla yükümlüdür.',
-  'Bazı haberler manşete sığmaz; sabah kahvesinde anlatılır.',
+  'Bu gazete yalnızca iki kişi için basılmıştır.',
+  'Bazı haberler manşete sığmaz; gece sigarasında anlatılır.',
   'Dünyada olup biten her şeyi başka gazeteler yazsın. Biz bizi yazarız.',
   'Yıllar sonra bu sayfayı bir kutudan çıkaracağız ve bugünü yeniden yaşayacağız.',
   'Burası boş kalmasın diye değil, unutulmasın diye yazıldı.',
 ];
 
-export const STAMPS = ['ÖZEL BASKI', 'İKİ KİŞİYE ÖZEL', 'KOLEKSİYONLUK', 'SON BASKI'];
+export const STAMPS = ['ÇOK ÖZEL BASKI', 'KİŞİYE BAYA ÖZEL', 'GALİBA AŞIKLAR', 'SON(SUZ) BASKI'];
 
 export const ADS: { head: string; body: string }[] = [
   { head: 'KAYIP', body: 'Bir adet çorap. En son çamaşır makinesinde görüldü. Bulan eve getirsin, ödül sarılarak ödenecek.' },
