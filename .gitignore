@@ -1,0 +1,9 @@
+node_modules/
+dist/
+public/fonts/
+test-results/
+playwright-report/
+.env
+.env.*
+*.local
+dist-e2e/
