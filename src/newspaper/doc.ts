@@ -30,9 +30,15 @@ interface PMNode {
   content?: PMNode[];
 }
 
+/** Repodan gelen doküman güvenilmez: yanlış tipler yok sayılır, tek dosya uygulamayı düşürmez. */
+function childrenOf(node: PMNode): PMNode[] {
+  return Array.isArray(node.content) ? node.content.filter((child) => child && typeof child === 'object') : [];
+}
+
 function runFromText(node: PMNode): Run {
-  const run: Run = { text: node.text ?? '' };
-  for (const mark of node.marks ?? []) {
+  const run: Run = { text: typeof node.text === 'string' ? node.text : '' };
+  for (const mark of Array.isArray(node.marks) ? node.marks : []) {
+    if (!mark) continue;
     if (mark.type === 'bold') run.b = true;
     else if (mark.type === 'italic') run.i = true;
     else if (mark.type === 'underline') run.u = true;
@@ -46,7 +52,7 @@ function runFromText(node: PMNode): Run {
 
 function inlineRuns(node: PMNode): Run[] {
   const runs: Run[] = [];
-  for (const child of node.content ?? []) {
+  for (const child of childrenOf(node)) {
     if (child.type === 'text') runs.push(runFromText(child));
     else if (child.type === 'hardBreak') runs.push({ text: '\n' });
   }
@@ -66,7 +72,7 @@ export function docToBlocks(doc: unknown): Block[] {
   const walk = (node: PMNode, context: { kind?: BlockKind; marker?: string }) => {
     switch (node.type) {
       case 'doc':
-        node.content?.forEach((child) => walk(child, {}));
+        childrenOf(node).forEach((child) => walk(child, {}));
         break;
       case 'paragraph': {
         const runs = inlineRuns(node);
@@ -89,18 +95,18 @@ export function docToBlocks(doc: unknown): Block[] {
         break;
       }
       case 'blockquote':
-        node.content?.forEach((child) => walk(child, { kind: 'quote' }));
+        childrenOf(node).forEach((child) => walk(child, { kind: 'quote' }));
         break;
       case 'bulletList':
-        node.content?.forEach((item) => walk(item, { kind: 'li', marker: '•' }));
+        childrenOf(node).forEach((item) => walk(item, { kind: 'li', marker: '•' }));
         break;
       case 'orderedList': {
         const start = typeof node.attrs?.start === 'number' ? node.attrs.start : 1;
-        node.content?.forEach((item, i) => walk(item, { kind: 'li', marker: `${start + i}.` }));
+        childrenOf(node).forEach((item, i) => walk(item, { kind: 'li', marker: `${start + i}.` }));
         break;
       }
       case 'listItem':
-        node.content?.forEach((child) => walk(child, context));
+        childrenOf(node).forEach((child) => walk(child, context));
         break;
       case 'horizontalRule':
         blocks.push({ kind: 'hr', runs: [] });
@@ -108,7 +114,12 @@ export function docToBlocks(doc: unknown): Block[] {
     }
   };
 
-  if (doc && typeof doc === 'object') walk(doc as PMNode, {});
+  try {
+    if (doc && typeof doc === 'object') walk(doc as PMNode, {});
+  } catch {
+    // Aşırı iç içe doküman yığını taşırır.
+    return [];
+  }
   return blocks;
 }
 

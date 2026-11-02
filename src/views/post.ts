@@ -10,10 +10,12 @@ import { askDialog, iconButton, iconLink, lightbox, loadInto, toast, topBar, Url
 async function confirmDelete(app: App, post: Post): Promise<boolean> {
   const photos = post.images.length ? `${post.images.length} fotoğrafıyla birlikte ` : '';
   const mine = post.author === app.session.name;
+  const inIssues = app.store.issues.filter((issue) => issue.posts.some((p) => p.id === post.id)).length;
+  const issueNote = inIssues ? ` Kaydedilmiş ${inIssues} gazetede görünmeye devam eder; onları ayrıca silmen gerekir.` : '';
 
   const first = await askDialog({
     title: 'Bu anıyı silecek misin?',
-    body: `“${post.title}” ${photos}arşivden kalkacak.`,
+    body: `“${post.title}” ${photos}arşivden kalkacak.${issueNote}`,
     keep: 'Yok, kalsın',
     proceed: 'Evet, sil',
     danger: true,
@@ -55,14 +57,15 @@ export function postView(app: App, id: string): HTMLElement {
   }
 
   const pool = new UrlPool();
-  app.cleanup = () => {
-    pool.release();
-    document.querySelector('.lightbox')?.remove();
-  };
+  app.cleanup = () => pool.close();
 
   const body = h('div', { class: 'prose' });
-  // docToHtml şemaya bağlıdır; serbest HTML üretmez.
-  body.innerHTML = docToHtml(post.doc);
+  try {
+    // docToHtml şemaya bağlıdır; serbest HTML üretmez.
+    body.innerHTML = docToHtml(post.doc);
+  } catch {
+    body.textContent = 'Bu yazının içeriği okunamadı.';
+  }
 
   const status = h('p', { class: 'error', role: 'alert' });
   const deleteButton = iconButton(

@@ -26,7 +26,8 @@ export function loginView({ onLogin, message }: LoginProps): HTMLElement {
     maxLength: 40,
     placeholder: 'Yazılarında görünecek isim',
   });
-  const remember = h('input', { type: 'checkbox', class: 'check', id: 'remember', checked: true });
+  // Varsayılan kapalı: token cihazda kalıcı olarak ancak bilerek saklanır.
+  const remember = h('input', { type: 'checkbox', class: 'check', id: 'remember' });
   const error = h('p', { class: 'error', role: 'alert', textContent: message ?? '' });
   const submit = h('button', { type: 'submit', class: 'btn primary big', textContent: 'Gir' });
 

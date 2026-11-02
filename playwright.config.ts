@@ -24,7 +24,7 @@ export default defineConfig({
       url: 'http://localhost:4173',
       reuseExistingServer: false,
       timeout: 120_000,
-      env: { VITE_GITHUB_API: API, VITE_DATA_OWNER: 'test', VITE_DATA_REPO: 'test-data' },
+      env: { VITE_GITHUB_API: API, VITE_DATA_OWNER: 'test', VITE_DATA_REPO: 'test-data', VITE_SITE_URL: 'http://localhost:4173/' },
     },
   ],
 });

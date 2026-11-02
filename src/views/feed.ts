@@ -1,40 +1,19 @@
-import { PAPER_NAME } from '../config';
 import { formatDate, h } from '../dom';
 import { excerptOf, filterPosts, isFiltering, searchTerms } from '../filter';
 import { icon } from '../icons';
 import type { App } from '../main';
-import { PRICES, SLOGANS } from '../newspaper/copy';
 import { estimateLabel, estimatePosts } from '../newspaper/estimate';
 import type { Post } from '../store';
-import { themeButton } from '../theme';
 import { clearFilterButton, filterBar, highlighted, tagChip } from './filters';
-import { iconLink, LazyImages, logoutButton, UrlPool } from './shared';
+import { frontPage } from './front';
+import { iconLink, LazyImages, UrlPool } from './shared';
 
 const STALE_AFTER_MS = 30_000;
 let lastRefresh = Date.now();
 
-const pick = <T>(items: readonly T[]): T => items[Math.floor(Math.random() * items.length)];
-
 function monthOf(post: Post): string {
   const [y, m] = post.date.split('-').map(Number);
   return new Intl.DateTimeFormat('tr-TR', { month: 'long', year: 'numeric' }).format(new Date(y, (m || 1) - 1, 1));
-}
-
-function frontPage(app: App): HTMLElement {
-  const today = new Intl.DateTimeFormat('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date());
-  return h(
-    'header',
-    { class: 'front' },
-    h(
-      'div',
-      { class: 'front-strip' },
-      h('span', {}, today),
-      h('span', { class: 'front-price' }, pick(PRICES)),
-      h('span', { class: 'front-tools' }, h('span', { class: 'front-who' }, app.session.name), themeButton(), logoutButton(app)),
-    ),
-    h('h1', { class: 'nameplate' }, PAPER_NAME),
-    h('p', { class: 'front-sub' }, pick(SLOGANS)),
-  );
 }
 
 export function feedView(app: App): HTMLElement {
@@ -42,7 +21,7 @@ export function feedView(app: App): HTMLElement {
   const thumbs = new LazyImages(app, pool);
   app.cleanup = () => {
     thumbs.stop();
-    pool.release();
+    pool.close();
   };
 
   const list = h('div', { class: 'feed' });
@@ -227,12 +206,15 @@ export function feedView(app: App): HTMLElement {
   return h(
     'div',
     { class: 'page page-home' },
-    frontPage(app),
+    frontPage(app, 'posts'),
     filters.element,
     h(
       'main',
       { class: 'content' },
       h('div', { class: 'result-line' }, count, clearFilter, h('span', { class: 'spacer' }), selectAll, refreshButton),
+      app.store.unreadable
+        ? h('p', { class: 'banner', role: 'status' }, `${app.store.unreadable} dosya bozuk olduğu için gösterilmiyor. Veri reposunu kontrol et.`)
+        : null,
       status,
       list,
     ),

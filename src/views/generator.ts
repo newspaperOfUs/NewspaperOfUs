@@ -8,10 +8,12 @@ import { estimateLabel, estimatePosts } from '../newspaper/estimate';
 import type { Post } from '../store';
 import { storeZip } from '../zip';
 import { clearFilterButton, filterBar } from './filters';
-import { iconButton, topBar, UrlPool } from './shared';
+import { printImages, reencode, saveFile, toBlob, zoom } from './press';
+import { iconButton, toast, topBar, UrlPool } from './shared';
 
 interface RenderedPage {
   png: Blob;
+  preview: Blob;
   pngUrl: string;
   previewUrl: string;
 }
@@ -21,6 +23,8 @@ interface Rendered {
   styleName: string;
   pages: RenderedPage[];
   pool: UrlPool;
+  /** Üretildiği andaki seçim: sonradan seçim değişse de kayıt doğru içeriği anlatır. */
+  posts: { id: string; title: string }[];
 }
 
 interface HistoryItem {
@@ -31,15 +35,12 @@ interface HistoryItem {
 
 /** Ekrandaki önizleme küçük tutulur; telefonda 20 tam boy sayfa belleğe sığmaz. */
 const PREVIEW_WIDTH = 1240;
+/** Git geçmişi hiç küçülmez: kayıtta sayfa başına 20 MB PNG yerine gözle farksız 4 MB JPEG tutulur. */
+const SAVED_QUALITY = 0.92;
+const COVER_WIDTH = 360;
 
 function randomSeed(): number {
   return crypto.getRandomValues(new Uint32Array(1))[0];
-}
-
-function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Sayfa dosyaya çevrilemedi.'))), type, quality);
-  });
 }
 
 function scaled(canvas: HTMLCanvasElement, width: number): HTMLCanvasElement {
@@ -62,30 +63,17 @@ function issueNumbers(all: Post[], selected: Post[]) {
   };
 }
 
-function saveFile(href: string, name: string) {
-  const link = h('a', { href, download: name });
-  document.body.append(link);
-  link.click();
-  link.remove();
-}
-
-function zoom(url: string, alt: string) {
-  const close = () => {
-    overlay.remove();
-    document.removeEventListener('keydown', onKey);
-  };
-  const onKey = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') close();
-  };
-  const overlay = h('div', { class: 'zoom', onclick: close }, h('img', { src: url, alt }));
-  document.body.append(overlay);
-  document.addEventListener('keydown', onKey);
+function issueTitle(posts: { title: string }[]): string {
+  return posts.length === 1 ? posts[0].title : `${posts[0].title} ve ${posts.length - 1} yazı daha`;
 }
 
 export function generatorView(app: App): HTMLElement {
   const history: HistoryItem[] = [];
   let current: Rendered | null = null;
   let running: AbortController | null = null;
+  let saving = false;
+  /** Bu ekranda kaydedilen tasarımlar: aynısı iki kez kaydedilmesin. */
+  const savedSeeds = new Set<number>();
 
   const narrow = window.matchMedia('(max-width: 60rem)').matches;
   const chooser = h('div', { class: 'chooser' });
@@ -94,8 +82,12 @@ export function generatorView(app: App): HTMLElement {
   const generateButton = h('button', { class: 'btn primary dock-main' }, icon('paper'), generateLabel, generateInfo);
   const downloadLabel = h('span', {}, 'PNG indir');
   const downloadButton = h('button', { class: 'btn', disabled: true }, icon('download'), downloadLabel);
-  const printButton = iconButton('print', 'Yazdır', () => void print());
+  const printButton = iconButton('print', 'Yazdır', () => {
+    if (current) void printImages(current.pages.map((page) => page.pngUrl));
+  });
   printButton.disabled = true;
+  const saveLabel = h('span', {}, 'Kaydet');
+  const saveButton = h('button', { class: 'btn', disabled: true }, icon('save'), saveLabel);
   const cancelButton = h('button', { class: 'link', type: 'button', textContent: 'İptal', hidden: true, onclick: () => running?.abort() });
   const status = h('p', { class: 'muted status', role: 'status' });
   const progressBar = h('div', { class: 'progress-bar' });
@@ -114,12 +106,15 @@ export function generatorView(app: App): HTMLElement {
 
   const syncButtons = () => {
     const selected = selectedPosts();
-    const busy = running !== null;
+    const busy = running !== null || saving;
     generateButton.disabled = busy || selected.length === 0;
     generateLabel.textContent = current ? 'Yeniden üret' : 'Gazete üret';
     generateInfo.textContent = selected.length ? `${selected.length} yazı · ${estimateLabel(estimatePosts(selected))}` : 'Önce yazı seç';
     downloadButton.disabled = busy || !current;
     printButton.disabled = busy || !current;
+    const alreadySaved = current !== null && savedSeeds.has(current.seed);
+    saveButton.disabled = busy || !current || alreadySaved;
+    if (!saving) saveLabel.textContent = alreadySaved ? 'Kaydedildi' : 'Kaydet';
     downloadLabel.textContent = current && current.pages.length > 1 ? `ZIP indir (${current.pages.length} sayfa)` : 'PNG indir';
     summaryText.textContent = selected.length ? `Hangi yazılar girsin? (${selected.length} seçili)` : 'Hangi yazılar girsin?';
     const allOn = visible.length > 0 && visible.every((p) => app.selection.has(p.id));
@@ -279,14 +274,14 @@ export function generatorView(app: App): HTMLElement {
             const small = scaled(canvas, PREVIEW_WIDTH);
             const jpeg = await toBlob(small, 'image/jpeg', 0.86);
             small.width = 0;
-            pages.push({ png, pngUrl: pool.make(png), previewUrl: pool.make(jpeg) });
+            pages.push({ png, preview: jpeg, pngUrl: pool.make(png), previewUrl: pool.make(jpeg) });
             await nextPaint();
           },
         },
       );
 
-      current?.pool.release();
-      current = { seed, styleName: result.styleName, pages, pool };
+      current?.pool.close();
+      current = { seed, styleName: result.styleName, pages, pool, posts: posts.map(({ id, title }) => ({ id, title })) };
       if (!history.some((item) => item.seed === seed)) {
         history.unshift({ seed, styleName: result.styleName, thumb });
       }
@@ -294,7 +289,7 @@ export function generatorView(app: App): HTMLElement {
       paintPreview();
       paintHistory();
     } catch (e) {
-      pool.release();
+      pool.close();
       if (e instanceof CancelledError) {
         status.textContent = 'Baskı iptal edildi.';
       } else {
@@ -310,23 +305,38 @@ export function generatorView(app: App): HTMLElement {
     }
   }
 
-  async function print() {
-    if (!current) return;
-    const sheet = h(
-      'div',
-      { id: 'print-sheet' },
-      current.pages.map(({ pngUrl }) => h('img', { src: pngUrl, alt: '' })),
-    );
-    document.body.append(sheet);
-    await Promise.all([...sheet.querySelectorAll('img')].map((img) => img.decode().catch(() => undefined)));
-    const clear = () => {
-      sheet.remove();
-      window.removeEventListener('afterprint', clear);
-    };
-    window.addEventListener('afterprint', clear);
-    window.print();
+  async function saveCurrent() {
+    if (!current || saving) return;
+    const target = current;
+    saving = true;
+    error.textContent = '';
+    syncButtons();
+    try {
+      const pages = [];
+      for (const [index, page] of target.pages.entries()) {
+        saveLabel.textContent = `Hazırlanıyor ${index + 1}/${target.pages.length}…`;
+        pages.push({ full: await reencode(page.png, SAVED_QUALITY), preview: page.preview });
+      }
+      const thumb = await reencode(target.pages[0].preview, 0.8, COVER_WIDTH);
+      await app.store.saveIssue(
+        { title: issueTitle(target.posts), styleName: target.styleName, seed: target.seed, posts: target.posts },
+        pages,
+        thumb,
+        (done, total) => {
+          saveLabel.textContent = `Yükleniyor %${Math.round((done / total) * 100)}`;
+        },
+      );
+      savedSeeds.add(target.seed);
+      toast('Gazete kaydedildi. Kaydedilenler bölümünde duruyor.');
+    } catch (e) {
+      error.textContent = app.handleError(e);
+    } finally {
+      saving = false;
+      syncButtons();
+    }
   }
 
+  saveButton.addEventListener('click', () => void saveCurrent());
   generateButton.addEventListener('click', () => void generate(randomSeed()));
 
   downloadButton.addEventListener('click', async () => {
@@ -340,9 +350,7 @@ export function generatorView(app: App): HTMLElement {
     downloadLabel.textContent = 'ZIP hazırlanıyor…';
     try {
       const zip = await storeZip(pages.map((page, i) => ({ name: `newspaper-of-us-${seed}-sayfa${i + 1}.png`, blob: page.png })));
-      const url = URL.createObjectURL(zip);
-      saveFile(url, `newspaper-of-us-${seed}.zip`);
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      saveFile(current.pool.make(zip), `newspaper-of-us-${seed}.zip`);
     } catch (e) {
       error.textContent = app.handleError(e);
     } finally {
@@ -350,11 +358,15 @@ export function generatorView(app: App): HTMLElement {
     }
   });
 
+  const beforeUnload = (event: BeforeUnloadEvent) => {
+    if (saving) event.preventDefault();
+  };
+  window.addEventListener('beforeunload', beforeUnload);
+  app.leaveGuard = () => !saving || confirm('Gazete hâlâ kaydediliyor. Çıkarsan kaydedilmez. Çıkılsın mı?');
   app.cleanup = () => {
     running?.abort();
-    current?.pool.release();
-    document.getElementById('print-sheet')?.remove();
-    document.querySelector('.zoom')?.remove();
+    current?.pool.close();
+    window.removeEventListener('beforeunload', beforeUnload);
   };
 
   panel.append(
@@ -385,7 +397,7 @@ export function generatorView(app: App): HTMLElement {
           h(
             'section',
             { class: 'press' },
-            h('div', { class: 'press-actions' }, downloadButton, printButton),
+            h('div', { class: 'press-actions' }, saveButton, downloadButton, printButton),
             h('div', { class: 'press-status' }, status, cancelButton),
             progress,
             error,

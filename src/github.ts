@@ -36,11 +36,20 @@ export class GitHubRepo {
     return `${API_BASE}/repos/${this.owner}/${this.repo}${path}`;
   }
 
+  /** Çıkıştan sonra bekleyen hiçbir iş token'ı kullanamaz. */
+  forget() {
+    this.token = '';
+  }
+
   private async request(path: string, init: RequestInit = {}, accept = 'application/vnd.github+json') {
     for (let attempt = 0; ; attempt++) {
+      if (!this.token) throw new ApiError(0, 'Oturum kapatıldı.');
       let res: Response;
       try {
         res = await fetch(this.url(path), {
+          // Özel içerik tarayıcının disk önbelleğine düşmesin; kalıcı önbellek "hatırla" ile açılır, çıkışta silinir.
+          // Dalın son hâli de hep güncel gelsin: API yanıtları normalde 60 sn önbelleğe alınır.
+          cache: 'no-store',
           ...init,
           headers: {
             Accept: accept,
@@ -68,16 +77,16 @@ export class GitHubRepo {
 
   /** Token bu repoya erişebiliyor mu? Erişemiyorsa GitHub 401/404 döner. */
   async connect(): Promise<{ isPrivate: boolean }> {
-    const res = await this.request('', { cache: 'no-store' });
+    const res = await this.request('');
     const info = await res.json();
     this.branch = info.default_branch || 'main';
     return { isPrivate: !!info.private };
   }
 
-  /** Dalın son commit'i. Tarayıcı önbelleği 60 sn eski veri verebildiği için no-store. */
+  /** Dalın son commit'i. */
   async headSha(): Promise<string> {
     try {
-      const res = await this.request(`/git/ref/heads/${this.branch}`, { cache: 'no-store' });
+      const res = await this.request(`/git/ref/heads/${this.branch}`);
       return (await res.json()).object.sha;
     } catch (e) {
       // Tamamen boş repoda Git Data API çalışmaz; ilk commit'i Contents API ile açıyoruz.

@@ -39,8 +39,11 @@ export function logoutButton(app: App): HTMLButtonElement {
 /** Görünüm kapanınca serbest bırakılan fotoğraf URL'leri. */
 export class UrlPool {
   private urls: string[] = [];
+  private closed = false;
 
   make(blob: Blob): string {
+    // Yolda kalan bir indirme kapanmış görünüme (veya çıkış sonrasına) özel içerik bırakamasın.
+    if (this.closed) throw new Error('Görünüm kapandı.');
     const url = URL.createObjectURL(blob);
     this.urls.push(url);
     return url;
@@ -50,6 +53,25 @@ export class UrlPool {
     this.urls.forEach((url) => URL.revokeObjectURL(url));
     this.urls = [];
   }
+
+  close() {
+    this.closed = true;
+    this.release();
+  }
+}
+
+// Görünümün dışında, body'ye eklenen katmanlar: diyalog, ışık kutusu, büyütme, yazdırma sayfası.
+const overlays = new Set<() => void>();
+
+/** Dönen işlev katman kendiliğinden kapanınca çağrılır. */
+export function trackOverlay(close: () => void): () => void {
+  overlays.add(close);
+  return () => overlays.delete(close);
+}
+
+export function closeOverlays() {
+  for (const close of [...overlays]) close();
+  overlays.clear();
 }
 
 export function loadInto(app: App, pool: UrlPool, image: HTMLImageElement, path: string): Promise<void> {
@@ -133,10 +155,12 @@ export function askDialog(options: DialogOptions): Promise<boolean> {
   return new Promise((resolve) => {
     const dialog = h('dialog', { class: `dialog pressure-${options.pressure ?? 0}${options.danger ? ' danger' : ''}` });
     const finish = (answer: boolean) => {
+      untrack();
       dialog.close();
       dialog.remove();
       resolve(answer);
     };
+    const untrack = trackOverlay(() => finish(false));
 
     const keep = h('button', { class: 'btn primary dialog-keep', type: 'button', onclick: () => finish(false) }, options.keep);
     const proceed = h('button', { class: 'btn dialog-proceed', type: 'button', onclick: () => finish(true) }, options.proceed);
@@ -182,9 +206,11 @@ export function lightbox(app: App, pool: UrlPool, paths: { path: string; caption
     void loadInto(app, pool, image, item.path);
   };
   const close = () => {
+    untrack();
     overlay.remove();
     document.removeEventListener('keydown', onKey);
   };
+  const untrack = trackOverlay(close);
   const step = (delta: number) => {
     index = (index + delta + paths.length) % paths.length;
     show();

@@ -1,5 +1,7 @@
 // Sayfa çizilmeden önce çalışır: karanlık modda açılışta beyaz parlama olmasın.
 (function () {
+  // Başka bir sitenin içinde çerçeveyle açılırsa hiçbir şey gösterme.
+  if (window.top !== window.self) document.documentElement.style.display = 'none';
   var stored = null;
   try {
     stored = localStorage.getItem('newspaper-of-us.theme');

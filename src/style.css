@@ -336,6 +336,13 @@ input::placeholder {
   padding: 18vh 1.2rem 2rem;
 }
 
+.failure-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
 .banner {
   background: var(--surface-2);
   border: 1px solid var(--line);
@@ -492,6 +499,96 @@ input::placeholder {
   padding: 0.35rem 0;
   border-top: 1px solid var(--line-strong);
   border-bottom: 3px double var(--line-strong);
+}
+
+.front-nav {
+  display: flex;
+  justify-content: center;
+  gap: 0.35rem;
+  padding-top: 0.45rem;
+}
+
+.front-tab {
+  font-size: 0.9rem;
+  font-weight: 550;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.front-tab:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
+.front-tab.on {
+  color: var(--on-ink);
+  background: var(--ink);
+}
+
+/* --- Kaydedilenler --- */
+.saved-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(46%, 11rem), 1fr));
+  gap: 1.4rem 0.9rem;
+  padding-top: 0.6rem;
+}
+
+.saved-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  text-decoration: none;
+}
+
+.saved-cover {
+  width: 100%;
+  aspect-ratio: 2480 / 3508;
+  object-fit: cover;
+  margin-bottom: 0.45rem;
+  background: var(--surface-2);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 28%);
+  transition: transform 0.12s;
+}
+
+.saved-card:hover .saved-cover {
+  transform: translateY(-2px);
+}
+
+.saved-title {
+  font-family: var(--head);
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.saved-detail {
+  max-width: 54rem;
+  padding-top: 1rem;
+}
+
+.saved-detail h1 {
+  font-family: var(--head);
+  font-size: clamp(1.5rem, 5vw, 2.2rem);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.saved-posts {
+  margin-bottom: 1rem;
+  font-size: 0.92rem;
+}
+
+.saved-posts summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.saved-posts ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.2rem;
 }
 
 /* --- Filtre --- */

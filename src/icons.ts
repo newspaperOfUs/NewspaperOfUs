@@ -12,6 +12,7 @@ const PATHS = {
   trash: '<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/>',
   back: '<path d="M19 12H5"/><path d="m11 6-6 6 6 6"/>',
   logout: '<path d="M14 4h5v16h-5"/><path d="M4 12h11"/><path d="m8 8-4 4 4 4"/>',
+  save: '<path d="M6 4h12v16l-6-4-6 4V4Z"/>',
   image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4 18 5.5-5 3.5 3 3-2.5 4.5 4"/>',
 } as const;
 

@@ -1,4 +1,4 @@
-import { Editor, generateHTML, type Extensions } from '@tiptap/core';
+import { Editor, generateHTML, isValidCSSStyleValue, type Extensions } from '@tiptap/core';
 import TextAlign from '@tiptap/extension-text-align';
 import { Color, TextStyle } from '@tiptap/extension-text-style';
 import StarterKit from '@tiptap/starter-kit';
@@ -14,9 +14,10 @@ const ThemedColor = Color.extend({
         ...entry.attributes,
         color: {
           ...entry.attributes.color,
+          // Doğrulama şart: değer style niteliğine yazılıyor, ";" ile başka stil eklenemesin.
           renderHTML: (attributes: Record<string, unknown>) =>
-            attributes.color
-              ? { style: `color: ${attributes.color}; --dark: ${liftForDark(String(attributes.color))}` }
+            isValidCSSStyleValue(attributes.color)
+              ? { style: `color: ${attributes.color}; --dark: ${liftForDark(attributes.color)}` }
               : {},
         },
       },

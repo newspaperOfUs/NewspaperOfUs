@@ -20,6 +20,43 @@ function syllables(word: string) {
   return parts.join('-');
 }
 
+describe('bozuk doküman', () => {
+  it.each([
+    ['null', null],
+    ['metin içerik', { type: 'doc', content: 'metin' }],
+    ['null çocuk', { type: 'doc', content: [null, 5, 'x'] }],
+    ['sayı paragraf içeriği', { type: 'doc', content: [{ type: 'paragraph', content: 7 }] }],
+    ['liste metin', { type: 'doc', content: [{ type: 'orderedList', content: 'x' }, { type: 'blockquote', content: 9 }] }],
+  ])('%s boş sonuç verir, düşmez', (_name, doc) => {
+    expect(docToBlocks(doc)).toEqual([]);
+  });
+
+  it('metin olmayan yazı ve bozuk işaretler yok sayılır', () => {
+    const doc = {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: 42 },
+            { type: 'text', text: 'kalan', marks: [null, { type: 'bold' }] },
+            { type: 'text', text: ' yazı', marks: 3 },
+          ],
+        },
+      ],
+    };
+    const [block] = docToBlocks(doc);
+    expect(blocksToPlainText([block])).toBe('kalan yazı');
+    expect(block.runs[1].b).toBe(true);
+  });
+
+  it('yığını taşıran derinlikte bile düşmez', () => {
+    let node: unknown = { type: 'paragraph', content: [{ type: 'text', text: 'dip' }] };
+    for (let i = 0; i < 200_000; i++) node = { type: 'blockquote', content: [node] };
+    expect(() => docToBlocks({ type: 'doc', content: [node] })).not.toThrow();
+  });
+});
+
 describe('Türkçe heceleme', () => {
   it.each([
     ['gazete', 'ga-ze-te'],

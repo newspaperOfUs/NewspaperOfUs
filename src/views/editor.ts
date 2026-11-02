@@ -336,7 +336,7 @@ export function editorView(app: App, id: string | null): HTMLElement {
     clearTimeout(estimateTimer);
     window.removeEventListener('beforeunload', beforeUnload);
     rich.destroy();
-    pool.release();
+    pool.close();
   };
 
   paintTags();

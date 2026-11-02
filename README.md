@@ -43,11 +43,11 @@ Site adresi: <https://emirhankskn.github.io/NewspaperOfUs/>
 
 [Yeni fine-grained token](https://github.com/settings/personal-access-tokens/new) sayfasında:
 
-- **Expiration:** seçebildiğin en uzun süre
+- **Expiration:** 90 gün önerilir; süresi dolan token sızmış olsa bile işe yaramaz
 - **Repository access:** Only select repositories → yalnızca `NewspaperOfUs-data`
 - **Repository permissions → Contents:** Read and write
 
-Çıkan `github_pat_…` değeri tek anahtarınızdır. İkiniz de siteye bununla girersiniz. Bu değeri koda veya public bir yere yazma.
+Çıkan `github_pat_…` değeri anahtarınızdır. Bu değeri koda veya public bir yere yazma. Daha güvenlisi iki kişiye iki ayrı token üretmektir: biri sızarsa diğerine dokunmadan iptal edilir.
 
 Token'ın süresi dolunca site giriş ekranına döner; yenisini üretip iki cihazda da girmeniz yeter. İçerik etkilenmez.
 
@@ -56,7 +56,8 @@ Token'ın süresi dolunca site giriş ekranına döner; yenisini üretip iki cih
 1. **Yeni yazı:** Başlık, tarih, etiketler, içerik (kalın, italik, renk, ara başlık, alıntı, liste) ve galeri. Yazarken altta tahmini sayfa sayısı görünür.
 2. **Ana sayfa:** İkinizin bütün yazıları, aylara ayrılmış. Üstten başlıkta ve içerikte arayabilir, etiketlere dokunarak süzebilirsin. Gazeteye girecekleri işaretleyip **Gazete üret** de; düğme tahmini sayfa sayısını gösterir.
 3. **Üretim ekranı:** Beğenmezsen **Yeniden üret**. Üstteki küçük resimlerden önceki tasarımlara dönebilirsin; aynı tasarım birebir geri gelir. Beğendiğini **PNG indir** veya **Yazdır**. Birden çok sayfa çıkarsa hepsi tek **ZIP** olarak iner; her sayfa ayrıca tek başına da indirilebilir.
-4. **Silme:** Yazı üç kez sorularak silinir. Git geçmişinde kaldığı için gerekirse veri reposundan geri alınabilir.
+4. **Kaydetme:** Beğendiğin baskıyı **Kaydet** ile özel depoya atarsın; **Kaydedilenler** bölümünde durur, oradan indirilir, yazdırılır veya silinir. Kaydedilmeyen baskılar sayfadan çıkınca kaybolur. Kayıtlar sayfa başına yaklaşık 4 MB JPEG'dir (PNG 20 MB tutardı) ve üretildiği hâliyle kalır: yazı sonradan değişse veya silinse de kayıtlı gazete değişmez.
+5. **Silme:** Yazı üç kez sorularak silinir. Git geçmişinde kaldığı için gerekirse veri reposundan geri alınabilir.
 
 Çıktı A4 oranında ve 300 DPI'dır (2480×3508). Seçim sınırı yoktur: içerik ne kadar uzunsa o kadar sayfa basılır, sığmayan yazı "Devamı 2. sayfada" ile sürer.
 
@@ -65,6 +66,17 @@ Token'ın süresi dolunca site giriş ekranına döner; yenisini üretip iki cih
 **Etiketler:** Yeni etiket yazıyı düzenlerken oluşturulur, sonra listeden tek dokunuşla verilir. Etiket listesi yazılardan çıkar: hiçbir yazıda kalmayan etiket kendiliğinden kaybolur. Birden çok etiket seçilirse herhangi birini taşıyan yazılar gösterilir.
 
 Yazıların kendisi dışındaki espriler (ilanlar, sloganlar, fiyat, hava durumu) `src/newspaper/copy.ts` içindedir; istediğin gibi değiştir veya yenisini ekle.
+
+## Güvenlik
+
+İçeriğin kapısını tarayıcı değil GitHub tutar: token olmadan API, raw ve git yolları özel repodan hiçbir şey vermez. Sitedeki giriş ekranını aşmak boş bir ekran açar, çünkü sitede içerik yoktur. Bu yüzden asıl korunması gereken token'dır.
+
+- **Aynı origin'de başka site olmamalı.** `kullanici.github.io` altındaki bütün projeler aynı tarayıcı depolamasını paylaşır; orada çalışan bir script token'ı okuyabilir. Bu site kendi origin'inde (ayrı bir GitHub organizasyonu veya özel alt alan adı) yayınlanmalıdır.
+- **Bu cihazı hatırla** yalnızca kendi cihazında işaretlenmeli. Çıkış yapınca token, taslaklar ve önbellek cihazdan silinir; diğer sekmeler de kapanır.
+- **Token şüphesinde:** [token sayfasından](https://github.com/settings/personal-access-tokens) iptal et. Eski token anında geçersiz olur.
+- **GitHub hesabı:** 2FA açık olmalı. Settings → Applications altında tüm repolara erişen uygulama bırakılmamalı; bunlar özel repoyu token olmadan okuyabilir.
+
+Silinen içerik özel reponun git geçmişinde kalır.
 
 ## Geliştirme
 
